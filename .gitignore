@@ -72,3 +72,4 @@ buildroot/
 *.plist
 Makefile
 *.patch
+*.xcworkspace*
