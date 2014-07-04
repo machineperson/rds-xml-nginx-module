@@ -169,7 +169,7 @@ ngx_http_rds_parse_col(ngx_http_request_t *r, ngx_buf_t *b,
 
     if (col->name.len == 0) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "rds_json: column name empty");
+                      "rds_xml: column name empty");
         return NGX_ERROR;
     }
 

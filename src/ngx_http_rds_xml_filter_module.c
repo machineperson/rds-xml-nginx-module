@@ -18,7 +18,7 @@
 #include <ngx_config.h>
 
 
-#define ngx_http_rds_xml_content_type  "application/json"
+#define ngx_http_rds_xml_content_type  "application/xml"
 
 #define ngx_http_rds_xml_errcode_default_key  "\"errcode\""
 #define ngx_http_rds_xml_errstr_default_key   "\"errstr\""
@@ -495,7 +495,7 @@ ngx_http_rds_xml_ret(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     if (jlcf->errcode.len == 0) {
         ngx_log_error(NGX_LOG_ERR, cf->log, 0,
-                      "rds_xml: rds_json_ret: the errcode argument is empty");
+                      "rds_xml: rds_xml_ret: the errcode argument is empty");
 
         return NGX_CONF_ERROR;
     }
@@ -506,7 +506,7 @@ ngx_http_rds_xml_ret(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
         if (c < '0' || c > '9') {
             ngx_log_error(NGX_LOG_ERR, cf->log, 0,
-                          "rds_xml: rds_json_ret: invalid errcode argument: "
+                          "rds_xml: rds_xml_ret: invalid errcode argument: "
                           "\"%V\"", &jlcf->errcode);
 
             return NGX_CONF_ERROR;
@@ -565,7 +565,7 @@ ngx_http_rds_xml_root(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return "takes an empty value";
     }
 
-    escape = ngx_http_rds_xml_escape_json_str(NULL, value[1].data,
+    escape = ngx_http_rds_xml_escape_xml_str(NULL, value[1].data,
                                                value[1].len);
 
     jlcf->root.len = value[1].len + escape + sizeof("\"\"") - 1;
@@ -583,7 +583,7 @@ ngx_http_rds_xml_root(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         p = ngx_copy(p, value[1].data, value[1].len);
 
     } else {
-        p = (u_char *) ngx_http_rds_xml_escape_json_str(p, value[1].data,
+        p = (u_char *) ngx_http_rds_xml_escape_xml_str(p, value[1].data,
                                                          value[1].len);
     }
 
@@ -616,7 +616,7 @@ ngx_http_rds_xml_success_property(ngx_conf_t *cf, ngx_command_t *cmd,
         return "takes an empty value";
     }
 
-    escape = ngx_http_rds_xml_escape_json_str(NULL, value[1].data,
+    escape = ngx_http_rds_xml_escape_xml_str(NULL, value[1].data,
                                                value[1].len);
 
     jlcf->success.len = value[1].len + escape + sizeof("\"\"") - 1;
@@ -634,7 +634,7 @@ ngx_http_rds_xml_success_property(ngx_conf_t *cf, ngx_command_t *cmd,
         p = ngx_copy(p, value[1].data, value[1].len);
 
     } else {
-        p = (u_char *) ngx_http_rds_xml_escape_json_str(p, value[1].data,
+        p = (u_char *) ngx_http_rds_xml_escape_xml_str(p, value[1].data,
                                                          value[1].len);
     }
 
@@ -685,7 +685,7 @@ ngx_http_rds_xml_user_property(ngx_conf_t *cf, ngx_command_t *cmd,
 
     /* process the user property key */
 
-    escape = ngx_http_rds_xml_escape_json_str(NULL, value[1].data,
+    escape = ngx_http_rds_xml_escape_xml_str(NULL, value[1].data,
                                                value[1].len);
 
     prop->key.len = value[1].len + escape + sizeof("\"\"") - 1;
@@ -703,7 +703,7 @@ ngx_http_rds_xml_user_property(ngx_conf_t *cf, ngx_command_t *cmd,
         p = ngx_copy(p, value[1].data, value[1].len);
 
     } else {
-        p = (u_char *) ngx_http_rds_xml_escape_json_str(p, value[1].data,
+        p = (u_char *) ngx_http_rds_xml_escape_xml_str(p, value[1].data,
                                                          value[1].len);
     }
 
@@ -746,7 +746,7 @@ ngx_http_rds_xml_errcode_key(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return "takes an empty value";
     }
 
-    escape = ngx_http_rds_xml_escape_json_str(NULL, value[1].data,
+    escape = ngx_http_rds_xml_escape_xml_str(NULL, value[1].data,
                                                value[1].len);
 
     jlcf->errcode_key.len = value[1].len + escape + sizeof("\"\"") - 1;
@@ -764,7 +764,7 @@ ngx_http_rds_xml_errcode_key(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         p = ngx_copy(p, value[1].data, value[1].len);
 
     } else {
-        p = (u_char *) ngx_http_rds_xml_escape_json_str(p, value[1].data,
+        p = (u_char *) ngx_http_rds_xml_escape_xml_str(p, value[1].data,
                                                          value[1].len);
     }
 
@@ -796,7 +796,7 @@ ngx_http_rds_xml_errstr_key(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return "takes an empty value";
     }
 
-    escape = ngx_http_rds_xml_escape_json_str(NULL, value[1].data,
+    escape = ngx_http_rds_xml_escape_xml_str(NULL, value[1].data,
                                                value[1].len);
 
     jlcf->errstr_key.len = value[1].len + escape + sizeof("\"\"") - 1;
@@ -814,7 +814,7 @@ ngx_http_rds_xml_errstr_key(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         p = ngx_copy(p, value[1].data, value[1].len);
 
     } else {
-        p = (u_char *) ngx_http_rds_xml_escape_json_str(p, value[1].data,
+        p = (u_char *) ngx_http_rds_xml_escape_xml_str(p, value[1].data,
                                                          value[1].len);
     }
 
