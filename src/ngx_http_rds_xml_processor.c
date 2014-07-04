@@ -10,9 +10,9 @@
 #include "ddebug.h"
 
 
-#include "ngx_http_rds_json_util.h"
-#include "ngx_http_rds_json_processor.h"
-#include "ngx_http_rds_json_output.h"
+#include "ngx_http_rds_xml_util.h"
+#include "ngx_http_rds_xml_processor.h"
+#include "ngx_http_rds_xml_output.h"
 #include "ngx_http_rds.h"
 #include "ngx_http_rds_utils.h"
 
@@ -21,8 +21,8 @@
 
 
 ngx_int_t
-ngx_http_rds_json_process_header(ngx_http_request_t *r,
-    ngx_chain_t *in, ngx_http_rds_json_ctx_t *ctx)
+ngx_http_rds_xml_process_header(ngx_http_request_t *request,
+    ngx_chain_t *in, ngx_http_rds_xml_ctx_t *ctx)
 {
     ngx_buf_t                       *b;
     ngx_http_rds_header_t            header;
@@ -36,8 +36,8 @@ ngx_http_rds_json_process_header(ngx_http_request_t *r,
 
     if (!ngx_buf_in_memory(b)) {
         if (!ngx_buf_special(b)) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "rds_json: process header: buf from "
+            ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                          "rds_xml: process header: buf from "
                           "upstream not in memory");
             goto invalid;
         }
@@ -51,7 +51,7 @@ ngx_http_rds_json_process_header(ngx_http_request_t *r,
         b = in->buf;
     }
 
-    rc = ngx_http_rds_parse_header(r, b, &header);
+    rc = ngx_http_rds_parse_header(request, b, &header);
 
     if (rc != NGX_OK) {
         goto invalid;
@@ -60,14 +60,14 @@ ngx_http_rds_json_process_header(ngx_http_request_t *r,
     dd("col count: %d", (int) header.col_count);
 
     if (header.col_count == 0) {
-        /* for empty result set, just return the JSON
+        /* for empty result set, just return the XML
          * representation of the RDS header */
 
         dd("col count == 0");
 
         if (b->pos != b->last) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "rds_json: header: there's unexpected remaining data "
+            ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                          "rds_xml: header: there's unexpected remaining data "
                           "in the buf");
             goto invalid;
         }
@@ -78,25 +78,25 @@ ngx_http_rds_json_process_header(ngx_http_request_t *r,
         if (!ctx->header_sent) {
             ctx->header_sent = 1;
 
-            rc = ngx_http_rds_json_next_header_filter(r);
+            rc = ngx_http_rds_xml_next_header_filter(request);
 
             if (rc == NGX_ERROR || rc >= NGX_HTTP_SPECIAL_RESPONSE) {
                 return rc;
             }
         }
 
-        rc = ngx_http_rds_json_output_header(r, ctx, &header);
+        rc = ngx_http_rds_xml_output_header(request, ctx, &header);
 
         if (rc == NGX_ERROR || rc >= NGX_HTTP_SPECIAL_RESPONSE) {
             return rc;
         }
 
-        ngx_http_rds_json_discard_bufs(r->pool, in);
+        ngx_http_rds_xml_discard_bufs(request->pool, in);
 
         return rc;
     }
 
-    ctx->cols = ngx_palloc(r->pool,
+    ctx->cols = ngx_palloc(request->pool,
                            header.col_count * sizeof(ngx_http_rds_column_t));
 
     if (ctx->cols == NULL) {
@@ -111,13 +111,13 @@ ngx_http_rds_json_process_header(ngx_http_request_t *r,
     if (!ctx->header_sent) {
         ctx->header_sent = 1;
 
-        rc = ngx_http_rds_json_next_header_filter(r);
+        rc = ngx_http_rds_xml_next_header_filter(request);
         if (rc == NGX_ERROR || rc >= NGX_HTTP_SPECIAL_RESPONSE) {
             return rc;
         }
     }
 
-    return ngx_http_rds_json_process_col(r, b->pos == b->last ? in->next : in,
+    return ngx_http_rds_xml_process_col(request, b->pos == b->last ? in->next : in,
                                          ctx);
 
 invalid:
@@ -126,9 +126,9 @@ invalid:
     if (!ctx->header_sent) {
         ctx->header_sent = 1;
 
-        r->headers_out.status = NGX_HTTP_INTERNAL_SERVER_ERROR;
-        ngx_http_send_header(r);
-        ngx_http_send_special(r, NGX_HTTP_LAST);
+        request->headers_out.status = NGX_HTTP_INTERNAL_SERVER_ERROR;
+        ngx_http_send_header(request);
+        ngx_http_send_special(request, NGX_HTTP_LAST);
 
         return NGX_ERROR;
     }
@@ -138,12 +138,12 @@ invalid:
 
 
 ngx_int_t
-ngx_http_rds_json_process_col(ngx_http_request_t *r, ngx_chain_t *in,
-    ngx_http_rds_json_ctx_t *ctx)
+ngx_http_rds_xml_process_col(ngx_http_request_t *request, ngx_chain_t *in,
+    ngx_http_rds_xml_ctx_t *ctx)
 {
     ngx_buf_t                       *b;
     ngx_int_t                        rc;
-    ngx_http_rds_json_loc_conf_t    *conf;
+    ngx_http_rds_xml_loc_conf_t    *conf;
 
     if (in == NULL) {
         return NGX_OK;
@@ -153,8 +153,8 @@ ngx_http_rds_json_process_col(ngx_http_request_t *r, ngx_chain_t *in,
 
     if (!ngx_buf_in_memory(b)) {
         if (!ngx_buf_special(b)) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "rds_json: process col: buf from "
+            ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                          "rds_xml: process col: buf from "
                           "upstream not in memory");
             return NGX_ERROR;
         }
@@ -170,7 +170,7 @@ ngx_http_rds_json_process_col(ngx_http_request_t *r, ngx_chain_t *in,
 
     dd("parsing rds column");
 
-    rc = ngx_http_rds_parse_col(r, b, &ctx->cols[ctx->cur_col]);
+    rc = ngx_http_rds_parse_col(request, b, &ctx->cols[ctx->cur_col]);
 
     dd("parse col returns %d (%d)", (int) rc, (int) NGX_OK);
 
@@ -194,10 +194,10 @@ ngx_http_rds_json_process_col(ngx_http_request_t *r, ngx_chain_t *in,
         dd("output \"[\"");
         dd("before output literal");
 
-        conf = ngx_http_get_module_loc_conf(r, ngx_http_rds_json_filter_module);
+        conf = ngx_http_get_module_loc_conf(request, ngx_http_rds_xml_filter_module);
 
         if (conf->root.len) {
-            rc = ngx_http_rds_json_output_props(r, ctx, conf);
+            rc = ngx_http_rds_xml_output_props(request, ctx, conf);
 
             dd("after output literal");
 
@@ -206,7 +206,7 @@ ngx_http_rds_json_process_col(ngx_http_request_t *r, ngx_chain_t *in,
             }
         }
 
-        rc = ngx_http_rds_json_output_literal(r, ctx,
+        rc = ngx_http_rds_xml_output_literal(request, ctx,
                                               (u_char *)"[", sizeof("[") - 1,
                                               0 /* last buf */);
 
@@ -216,8 +216,8 @@ ngx_http_rds_json_process_col(ngx_http_request_t *r, ngx_chain_t *in,
             return rc;
         }
 
-        if (conf->format == json_format_compact) {
-            rc = ngx_http_rds_json_output_cols(r, ctx);
+        if (conf->format == xml_format_compact) {
+            rc = ngx_http_rds_xml_output_cols(request, ctx);
 
             if (rc == NGX_ERROR || rc >= NGX_HTTP_SPECIAL_RESPONSE) {
                 return rc;
@@ -231,21 +231,21 @@ ngx_http_rds_json_process_col(ngx_http_request_t *r, ngx_chain_t *in,
         }
 
         dd("process col is entering process row...");
-        return ngx_http_rds_json_process_row(r, in, ctx);
+        return ngx_http_rds_xml_process_row(request, in, ctx);
     }
 
-    return ngx_http_rds_json_process_col(r, in, ctx);
+    return ngx_http_rds_xml_process_col(request, in, ctx);
 }
 
 
 ngx_int_t
-ngx_http_rds_json_process_row(ngx_http_request_t *r, ngx_chain_t *in,
-    ngx_http_rds_json_ctx_t *ctx)
+ngx_http_rds_xml_process_row(ngx_http_request_t *request, ngx_chain_t *in,
+    ngx_http_rds_xml_ctx_t *ctx)
 {
     ngx_buf_t                   *b;
     ngx_int_t                    rc;
 
-    ngx_http_rds_json_loc_conf_t        *conf;
+    ngx_http_rds_xml_loc_conf_t        *conf;
 
     if (in == NULL) {
         return NGX_OK;
@@ -257,8 +257,8 @@ ngx_http_rds_json_process_row(ngx_http_request_t *r, ngx_chain_t *in,
 
     if (!ngx_buf_in_memory(b)) {
         if (!ngx_buf_special(b)) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "rds_json: process row: buf from "
+            ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                          "rds_xml: process row: buf from "
                           "upstream not in memory");
             return NGX_ERROR;
         }
@@ -273,8 +273,8 @@ ngx_http_rds_json_process_row(ngx_http_request_t *r, ngx_chain_t *in,
     }
 
     if (b->last - b->pos < (ssize_t) sizeof(uint8_t)) {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "rds_json: row flag is incomplete in the buf");
+        ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                      "rds_xml: row flag is incomplete in the buf");
         return NGX_ERROR;
     }
 
@@ -287,22 +287,22 @@ ngx_http_rds_json_process_row(ngx_http_request_t *r, ngx_chain_t *in,
         ctx->state = state_done;
 
         if (b->pos != b->last) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "rds_json: row: there's unexpected remaining data "
+            ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                          "rds_xml: row: there's unexpected remaining data "
                           "in the buf");
             return NGX_ERROR;
         }
 
-        conf = ngx_http_get_module_loc_conf(r, ngx_http_rds_json_filter_module);
+        conf = ngx_http_get_module_loc_conf(request, ngx_http_rds_xml_filter_module);
 
         if (conf->root.len) {
-            rc = ngx_http_rds_json_output_literal(r, ctx,
+            rc = ngx_http_rds_xml_output_literal(r, ctx,
                                                   (u_char *)"]}",
                                                   sizeof("]}") - 1,
                                                   1 /* last buf*/);
 
         } else {
-            rc = ngx_http_rds_json_output_literal(r, ctx,
+            rc = ngx_http_rds_xml_output_literal(r, ctx,
                                                   (u_char *)"]",
                                                   sizeof("]") - 1,
                                                   1 /* last buf*/);
@@ -326,13 +326,13 @@ ngx_http_rds_json_process_row(ngx_http_request_t *r, ngx_chain_t *in,
         dd("process row: buf not consumed completely");
     }
 
-    return ngx_http_rds_json_process_field(r, in, ctx);
+    return ngx_http_rds_xml_process_field(r, in, ctx);
 }
 
 
 ngx_int_t
-ngx_http_rds_json_process_field(ngx_http_request_t *r, ngx_chain_t *in,
-    ngx_http_rds_json_ctx_t *ctx)
+ngx_http_rds_xml_process_field(ngx_http_request_t *r, ngx_chain_t *in,
+    ngx_http_rds_xml_ctx_t *ctx)
 {
     size_t              total, len;
     ngx_buf_t          *b;
@@ -349,8 +349,8 @@ ngx_http_rds_json_process_field(ngx_http_request_t *r, ngx_chain_t *in,
             dd("buf not in memory");
 
             if (!ngx_buf_special(b)) {
-                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                              "rds_json: process field: buf from "
+                ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                              "rds_xml: process field: buf from "
                               "upstream not in memory");
                 return NGX_ERROR;
             }
@@ -367,8 +367,8 @@ ngx_http_rds_json_process_field(ngx_http_request_t *r, ngx_chain_t *in,
         dd("process field: buf size: %d", (int) ngx_buf_size(b));
 
         if (b->last - b->pos < (ssize_t) sizeof(uint32_t)) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "rds_json: field size is incomplete in the buf: %*s "
+            ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                          "rds_xml: field size is incomplete in the buf: %*s "
                           "(len: %d)", b->last - b->pos, b->pos,
                           (int) (b->last - b->pos));
 
@@ -387,7 +387,7 @@ ngx_http_rds_json_process_field(ngx_http_request_t *r, ngx_chain_t *in,
             len = 0;
             ctx->field_data_rest = 0;
 
-            rc = ngx_http_rds_json_output_field(r, ctx, b->pos, len,
+            rc = ngx_http_rds_xml_output_field(r, ctx, b->pos, len,
                                                 1 /* is null */);
 
         } else {
@@ -399,7 +399,7 @@ ngx_http_rds_json_process_field(ngx_http_request_t *r, ngx_chain_t *in,
 
             ctx->field_data_rest = total - len;
 
-            rc = ngx_http_rds_json_output_field(r, ctx, b->pos, len,
+            rc = ngx_http_rds_xml_output_field(r, ctx, b->pos, len,
                                                 0 /* not null */);
         }
 
@@ -418,7 +418,7 @@ ngx_http_rds_json_process_field(ngx_http_request_t *r, ngx_chain_t *in,
 
             ctx->state = state_expect_more_field_data;
 
-            return ngx_http_rds_json_process_more_field_data(r, in, ctx);
+            return ngx_http_rds_xml_process_more_field_data(r, in, ctx);
         }
 
         ctx->cur_col++;
@@ -428,7 +428,7 @@ ngx_http_rds_json_process_field(ngx_http_request_t *r, ngx_chain_t *in,
 
             ctx->state = state_expect_row;
 
-            return ngx_http_rds_json_process_row(r, in, ctx);
+            return ngx_http_rds_xml_process_row(r, in, ctx);
         }
 
         /* continue to process the next field (if any) */
@@ -439,8 +439,8 @@ ngx_http_rds_json_process_field(ngx_http_request_t *r, ngx_chain_t *in,
 
 
 ngx_int_t
-ngx_http_rds_json_process_more_field_data(ngx_http_request_t *r,
-    ngx_chain_t *in, ngx_http_rds_json_ctx_t *ctx)
+ngx_http_rds_xml_process_more_field_data(ngx_http_request_t *request,
+    ngx_chain_t *in, ngx_http_rds_xml_ctx_t *ctx)
 {
     ngx_int_t                    rc;
     ngx_buf_t                   *b;
@@ -454,8 +454,8 @@ ngx_http_rds_json_process_more_field_data(ngx_http_request_t *r,
         b = in->buf;
 
         if (!ngx_buf_in_memory(b)) {
-            ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                          "rds_json: buf from upstream not in memory");
+            ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                          "rds_xml: buf from upstream not in memory");
             return NGX_ERROR;
         }
 
@@ -469,7 +469,7 @@ ngx_http_rds_json_process_more_field_data(ngx_http_request_t *r,
             ctx->field_data_rest -= len;
         }
 
-        rc = ngx_http_rds_json_output_more_field_data(r, ctx, b->pos, len);
+        rc = ngx_http_rds_xml_output_more_field_data(request, ctx, b->pos, len);
 
         if (rc == NGX_ERROR || rc >= NGX_HTTP_SPECIAL_RESPONSE) {
             return rc;
@@ -495,14 +495,14 @@ ngx_http_rds_json_process_more_field_data(ngx_http_request_t *r,
 
             ctx->state = state_expect_row;
 
-            return ngx_http_rds_json_process_row(r, in, ctx);
+            return ngx_http_rds_xml_process_row(request, in, ctx);
         }
 
         dd("proces more field data: read the next field");
 
         ctx->state = state_expect_field;
 
-        return ngx_http_rds_json_process_field(r, in, ctx);
+        return ngx_http_rds_xml_process_field(request, in, ctx);
     }
 
     /* impossible to reach here */

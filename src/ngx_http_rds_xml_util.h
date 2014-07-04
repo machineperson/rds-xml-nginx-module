@@ -4,8 +4,8 @@
  */
 
 
-#ifndef NGX_HTTP_RDS_JSON_UTIL_H
-#define NGX_HTTP_RDS_JSON_UTIL_H
+#ifndef NGX_HTTP_RDS_XML_UTIL_H
+#define NGX_HTTP_RDS_XML_UTIL_H
 
 
 #include <ngx_core.h>
@@ -27,12 +27,12 @@
 #endif
 
 
-uintptr_t ngx_http_rds_json_escape_json_str(u_char *dst, u_char *src,
+uintptr_t ngx_http_rds_xml_escape_xml_str(u_char *dst, u_char *src,
     size_t size);
 
-ngx_int_t ngx_http_rds_json_test_content_type(ngx_http_request_t *r);
+ngx_int_t ngx_http_rds_xml_test_content_type(ngx_http_request_t *request);
 
-void ngx_http_rds_json_discard_bufs(ngx_pool_t *pool, ngx_chain_t *in);
+void ngx_http_rds_xml_discard_bufs(ngx_pool_t *pool, ngx_chain_t *in);
 
 
-#endif /* NGX_HTTP_RDS_JSON_UTIL_H */
+#endif /* NGX_HTTP_RDS_XML_UTIL_H */

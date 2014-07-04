@@ -3,8 +3,8 @@
  * Copyright (C) agentzh
  */
 
-#ifndef NGX_HTTP_RDS_JSON_FILTER_MODULE_H
-#define NGX_HTTP_RDS_JSON_FILTER_MODULE_H
+#ifndef NGX_HTTP_RDS_XML_FILTER_MODULE_H
+#define NGX_HTTP_RDS_XML_FILTER_MODULE_H
 
 #include "ngx_http_rds.h"
 
@@ -19,52 +19,57 @@
 #endif
 
 
-extern ngx_module_t  ngx_http_rds_json_filter_module;
+extern ngx_module_t  ngx_http_rds_xml_filter_module;
 
-extern ngx_http_output_header_filter_pt  ngx_http_rds_json_next_header_filter;
+extern ngx_http_output_header_filter_pt  ngx_http_rds_xml_next_header_filter;
 
-extern ngx_http_output_body_filter_pt    ngx_http_rds_json_next_body_filter;
+extern ngx_http_output_body_filter_pt    ngx_http_rds_xml_next_body_filter;
 
-
+/* normal: <row> <column>value</column> </row>
+ * compact: <row> <column_name /> </row> <row> <value /> </row> 
+ * (that is the first row holds the column names)
+ * (TODO: do we even want this)
+ * pretty: does not do anything, TODO: figure out whether we need this 
+ * */
 typedef enum {
-    json_format_normal,
-    json_format_compact,
-    json_format_pretty          /* TODO */
+    xml_format_normal,
+    xml_format_compact,
+    xml_format_pretty          /* TODO */
 
-} ngx_http_rds_json_format_t;
+} ngx_http_rds_xml_format_t;
 
 
 typedef struct {
     ngx_str_t                       key;
     ngx_http_complex_value_t        value;
-} ngx_http_rds_json_property_t;
+} ngx_http_rds_xml_property_t;
 
 
 typedef struct {
     unsigned            requires_filters; /* :1 */
 
-} ngx_http_rds_json_main_conf_t;
+} ngx_http_rds_xml_main_conf_t;
 
 
 typedef struct {
     ngx_flag_t                       enabled;
     ngx_uint_t                       format;
     ngx_str_t                        content_type;
-    ngx_str_t                        root; /* rds_json_root key */
-    ngx_str_t                        success; /* rds_json_success_property
+    ngx_str_t                        root; /* rds_xml_root key */
+    ngx_str_t                        success; /* rds_xml_success_property
                                                * key */
-    ngx_array_t                     *user_props; /* rds_json_user_property */
+    ngx_array_t                     *user_props; /* rds_xml_user_property */
 
     ngx_str_t                        errcode_key;
     ngx_str_t                        errstr_key;
 
     size_t                           buf_size;
 
-    /* for rds_json_ret */
+    /* for rds_xml_ret */
     ngx_str_t                        errcode;
     ngx_http_complex_value_t        *errstr;
 
-} ngx_http_rds_json_loc_conf_t;
+} ngx_http_rds_xml_loc_conf_t;
 
 
 typedef enum {
@@ -75,11 +80,11 @@ typedef enum {
     state_expect_more_field_data,
     state_done
 
-} ngx_http_rds_json_state_t;
+} ngx_http_rds_xml_state_t;
 
 
 typedef struct {
-    ngx_http_rds_json_state_t            state;
+    ngx_http_rds_xml_state_t            state;
 
     ngx_str_t                           *col_name;
     ngx_uint_t                           col_count;
@@ -109,8 +114,8 @@ typedef struct {
     ngx_flag_t                           header_sent:1;
     ngx_flag_t                           seen_stream_end:1;
     ngx_flag_t                           generated_col_names:1;
-} ngx_http_rds_json_ctx_t;
+} ngx_http_rds_xml_ctx_t;
 
 
-#endif /* NGX_HTTP_RDS_JSON_FILTER_MODULE_H */
+#endif /* NGX_HTTP_RDS_XML_FILTER_MODULE_H */
 

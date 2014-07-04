@@ -11,11 +11,11 @@
 
 
 #include "resty_dbd_stream.h"
-#include "ngx_http_rds_json_util.h"
+#include "ngx_http_rds_xml_util.h"
 
 
 uintptr_t
-ngx_http_rds_json_escape_json_str(u_char *dst, u_char *src, size_t size)
+ngx_http_rds_xml_escape_xml_str(u_char *dst, u_char *src, size_t size)
 {
     ngx_uint_t                   n;
 
@@ -121,11 +121,11 @@ ngx_http_rds_json_escape_json_str(u_char *dst, u_char *src, size_t size)
 
 
 ngx_int_t
-ngx_http_rds_json_test_content_type(ngx_http_request_t *r)
+ngx_http_rds_xml_test_content_type(ngx_http_request_t *request)
 {
     ngx_str_t           *type;
 
-    type = &r->headers_out.content_type;
+    type = &request->headers_out.content_type;
     if (type->len != rds_content_type_len
         || ngx_strncmp(type->data, rds_content_type, rds_content_type_len)
            != 0)
@@ -138,7 +138,7 @@ ngx_http_rds_json_test_content_type(ngx_http_request_t *r)
 
 
 void
-ngx_http_rds_json_discard_bufs(ngx_pool_t *pool, ngx_chain_t *in)
+ngx_http_rds_xml_discard_bufs(ngx_pool_t *pool, ngx_chain_t *in)
 {
     ngx_chain_t         *cl;
 

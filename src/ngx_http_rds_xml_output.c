@@ -1,6 +1,6 @@
 
 /*
- * Copyright (C) agentzh
+ * Copyright (C) agentzh, Nadja Deininger
  */
 
 
@@ -10,33 +10,33 @@
 #include "ddebug.h"
 
 
-#include "ngx_http_rds_json_filter_module.h"
-#include "ngx_http_rds_json_output.h"
-#include "ngx_http_rds_json_util.h"
+#include "ngx_http_rds_xml_filter_module.h"
+#include "ngx_http_rds_xml_output.h"
+#include "ngx_http_rds_xml_util.h"
 #include "resty_dbd_stream.h"
 #include <nginx.h>
 
 
-static u_char * ngx_http_rds_json_request_mem(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx, size_t len);
-static ngx_int_t ngx_http_rds_json_get_buf(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx);
-static u_char * ngx_http_rds_json_get_postponed(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx, size_t len);
-static ngx_int_t ngx_http_rds_json_submit_mem(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx, size_t len, unsigned last_buf);
+static u_char * ngx_http_rds_xml_request_mem(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx, size_t len);
+static ngx_int_t ngx_http_rds_xml_get_buf(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx);
+static u_char * ngx_http_rds_xml_get_postponed(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx, size_t len);
+static ngx_int_t ngx_http_rds_xml_submit_mem(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx, size_t len, unsigned last_buf);
 
 
 static size_t ngx_get_num_size(uint64_t i);
 
 
 ngx_int_t
-ngx_http_rds_json_output_literal(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx, u_char *data, size_t len, int last_buf)
+ngx_http_rds_xml_output_literal(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx, u_char *data, size_t len, int last_buf)
 {
     u_char                      *pos;
 
-    pos = ngx_http_rds_json_request_mem(r, ctx, len);
+    pos = ngx_http_rds_xml_request_mem(request, ctx, len);
     if (pos == NULL) {
         return NGX_ERROR;
     }
@@ -48,18 +48,18 @@ ngx_http_rds_json_output_literal(ngx_http_request_t *r,
     if (last_buf) {
         ctx->seen_stream_end = 1;
 
-        if (r != r->main) {
+        if (request != request->main) {
             last_buf = 0;
         }
     }
 
-    return ngx_http_rds_json_submit_mem(r, ctx, len, (unsigned) last_buf);
+    return ngx_http_rds_xml_submit_mem(request, ctx, len, (unsigned) last_buf);
 }
 
 
 ngx_int_t
-ngx_http_rds_json_output_bufs(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx)
+ngx_http_rds_xml_output_bufs(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx)
 {
     ngx_int_t                rc;
     ngx_chain_t             *cl;
@@ -70,7 +70,7 @@ ngx_http_rds_json_output_bufs(ngx_http_request_t *r,
         ctx->seen_stream_end = 0;
 
         if (ctx->avail_out) {
-            cl = ngx_alloc_chain_link(r->pool);
+            cl = ngx_alloc_chain_link(request->pool);
             if (cl == NULL) {
                 return NGX_ERROR;
             }
@@ -94,14 +94,14 @@ ngx_http_rds_json_output_bufs(ngx_http_request_t *r,
 
         /* fprintf(stderr, "XXX Relooping..."); */
 
-        rc = ngx_http_rds_json_next_body_filter(r, ctx->out);
+        rc = ngx_http_rds_xml_next_body_filter(request, ctx->out);
 
         if (rc == NGX_ERROR || rc >= NGX_HTTP_SPECIAL_RESPONSE) {
             return rc;
         }
 
 #if defined(nginx_version) && nginx_version >= 1001004
-        ngx_chain_update_chains(r->pool, &ctx->free_bufs, &ctx->busy_bufs,
+        ngx_chain_update_chains(request->pool, &ctx->free_bufs, &ctx->busy_bufs,
                                 &ctx->out, ctx->tag);
 #else
         ngx_chain_update_chains(&ctx->free_bufs, &ctx->busy_bufs, &ctx->out,
@@ -116,8 +116,8 @@ ngx_http_rds_json_output_bufs(ngx_http_request_t *r,
 
 
 ngx_int_t
-ngx_http_rds_json_output_header(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx, ngx_http_rds_header_t *header)
+ngx_http_rds_xml_output_header(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx, ngx_http_rds_header_t *header)
 {
     u_char                  *pos, *last;
     size_t                   size;
@@ -127,10 +127,10 @@ ngx_http_rds_json_output_header(ngx_http_request_t *r,
     ngx_str_t               *values = NULL;
     uintptr_t               *escapes = NULL;
 
-    ngx_http_rds_json_property_t        *prop = NULL;
-    ngx_http_rds_json_loc_conf_t        *conf;
+    ngx_http_rds_xml_property_t        *prop = NULL;
+    ngx_http_rds_xml_loc_conf_t        *conf;
 
-    conf = ngx_http_get_module_loc_conf(r, ngx_http_rds_json_filter_module);
+    conf = ngx_http_get_module_loc_conf(request, ngx_http_rds_xml_filter_module);
 
     /* calculate the buffer size */
 
@@ -151,7 +151,7 @@ ngx_http_rds_json_output_header(ngx_http_request_t *r,
     }
 
     if (conf->user_props) {
-        values = ngx_pnalloc(r->pool,
+        values = ngx_pnalloc(request->pool,
                              conf->user_props->nelts * (sizeof(ngx_str_t)
                              + sizeof(uintptr_t)));
 
@@ -164,13 +164,13 @@ ngx_http_rds_json_output_header(ngx_http_request_t *r,
 
         prop = conf->user_props->elts;
         for (i = 0; i < conf->user_props->nelts; i++) {
-            if (ngx_http_complex_value(r, &prop[i].value, &values[i])
+            if (ngx_http_complex_value(request, &prop[i].value, &values[i])
                 != NGX_OK)
             {
                 return NGX_ERROR;
             }
 
-            escapes[i] = ngx_http_rds_json_escape_json_str(NULL,
+            escapes[i] = ngx_http_rds_xml_escape_xml_str(NULL,
                                                            values[i].data,
                                                            values[i].len);
 
@@ -181,7 +181,7 @@ ngx_http_rds_json_output_header(ngx_http_request_t *r,
 
 
     if (header->errstr.len) {
-        escape = ngx_http_rds_json_escape_json_str(NULL, header->errstr.data,
+        escape = ngx_http_rds_xml_escape_xml_str(NULL, header->errstr.data,
                                                    header->errstr.len);
 
         size += sizeof(",") - 1
@@ -208,7 +208,7 @@ ngx_http_rds_json_output_header(ngx_http_request_t *r,
 
     /* create the buffer */
 
-    pos = ngx_http_rds_json_request_mem(r, ctx, size);
+    pos = ngx_http_rds_xml_request_mem(request, ctx, size);
     if (pos == NULL) {
         return NGX_ERROR;
     }
@@ -241,7 +241,7 @@ ngx_http_rds_json_output_header(ngx_http_request_t *r,
 
             } else {
                 last = (u_char *)
-                        ngx_http_rds_json_escape_json_str(last,
+                        ngx_http_rds_xml_escape_xml_str(last,
                                                           values[i].data,
                                                           values[i].len);
             }
@@ -268,7 +268,7 @@ ngx_http_rds_json_output_header(ngx_http_request_t *r,
 
         } else {
             last = (u_char *)
-                    ngx_http_rds_json_escape_json_str(last,
+                    ngx_http_rds_xml_escape_xml_str(last,
                                                       header->errstr.data,
                                                       header->errstr.len);
         }
@@ -290,26 +290,26 @@ ngx_http_rds_json_output_header(ngx_http_request_t *r,
     *last++ = '}';
 
     if ((size_t) (last - pos) != size) {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "rds_json: output header buffer error: %O != %uz",
+        ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                      "rds_xml: output header buffer error: %O != %uz",
                       (off_t) (last - pos), size);
 
         return NGX_ERROR;
     }
 
-    if (r == r->main) {
+    if (request == request->main) {
         last_buf = 1;
     }
 
     ctx->seen_stream_end = 1;
 
-    return ngx_http_rds_json_submit_mem(r, ctx, size, (unsigned) last_buf);
+    return ngx_http_rds_xml_submit_mem(request, ctx, size, (unsigned) last_buf);
 }
 
 
 ngx_int_t
-ngx_http_rds_json_output_props(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx, ngx_http_rds_json_loc_conf_t *conf)
+ngx_http_rds_xml_output_props(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx, ngx_http_rds_xml_loc_conf_t *conf)
 {
     size_t                   size;
     u_char                  *pos, *last;
@@ -317,7 +317,7 @@ ngx_http_rds_json_output_props(ngx_http_request_t *r,
     ngx_str_t               *values = NULL;
     uintptr_t               *escapes = NULL;
 
-    ngx_http_rds_json_property_t        *prop = NULL;
+    ngx_http_rds_xml_property_t        *prop = NULL;
 
     size = sizeof("{:") - 1 + conf->root.len;
 
@@ -326,7 +326,7 @@ ngx_http_rds_json_output_props(ngx_http_request_t *r,
     }
 
     if (conf->user_props) {
-        values = ngx_pnalloc(r->pool,
+        values = ngx_pnalloc(request->pool,
                              conf->user_props->nelts * (sizeof(ngx_str_t)
                              + sizeof(uintptr_t)));
 
@@ -339,13 +339,13 @@ ngx_http_rds_json_output_props(ngx_http_request_t *r,
 
         prop = conf->user_props->elts;
         for (i = 0; i < conf->user_props->nelts; i++) {
-            if (ngx_http_complex_value(r, &prop[i].value, &values[i])
+            if (ngx_http_complex_value(request, &prop[i].value, &values[i])
                 != NGX_OK)
             {
                 return NGX_ERROR;
             }
 
-            escapes[i] = ngx_http_rds_json_escape_json_str(NULL,
+            escapes[i] = ngx_http_rds_xml_escape_xml_str(NULL,
                                                            values[i].data,
                                                            values[i].len);
 
@@ -354,7 +354,7 @@ ngx_http_rds_json_output_props(ngx_http_request_t *r,
         }
     }
 
-    pos = ngx_http_rds_json_request_mem(r, ctx, size);
+    pos = ngx_http_rds_xml_request_mem(request, ctx, size);
     if (pos == NULL) {
         return NGX_ERROR;
     }
@@ -379,7 +379,7 @@ ngx_http_rds_json_output_props(ngx_http_request_t *r,
 
             } else {
                 last = (u_char *)
-                        ngx_http_rds_json_escape_json_str(last,
+                        ngx_http_rds_xml_escape_xml_str(last,
                                                           values[i].data,
                                                           values[i].len);
             }
@@ -393,20 +393,20 @@ ngx_http_rds_json_output_props(ngx_http_request_t *r,
     *last++ = ':';
 
     if (last - pos != (ssize_t) size) {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "rds_json: output props begin: buffer error: %O != %uz",
+        ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                      "rds_xml: output props begin: buffer error: %O != %uz",
                       (off_t) (last - pos), size);
 
         return NGX_ERROR;
     }
 
-    return ngx_http_rds_json_submit_mem(r, ctx, size, 0);
+    return ngx_http_rds_xml_submit_mem(r, ctx, size, 0);
 }
 
 
 ngx_int_t
-ngx_http_rds_json_output_cols(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx)
+ngx_http_rds_xml_output_cols(ngx_http_request_t *r,
+    ngx_http_rds_xml_ctx_t *ctx)
 {
     ngx_uint_t                           i;
     ngx_http_rds_column_t               *col;
@@ -418,7 +418,7 @@ ngx_http_rds_json_output_cols(ngx_http_request_t *r,
 
     for (i = 0; i < ctx->col_count; i++) {
         col = &ctx->cols[i];
-        key_escape = ngx_http_rds_json_escape_json_str(NULL, col->name.data,
+        key_escape = ngx_http_rds_xml_escape_xml_str(NULL, col->name.data,
                                                        col->name.len);
 
         dd("key_escape: %d", (int) key_escape);
@@ -433,7 +433,7 @@ ngx_http_rds_json_output_cols(ngx_http_request_t *r,
 
     ctx->generated_col_names = 1;
 
-    pos = ngx_http_rds_json_request_mem(r, ctx, size);
+    pos = ngx_http_rds_xml_request_mem(r, ctx, size);
     if (pos == NULL) {
         return NGX_ERROR;
     }
@@ -447,7 +447,7 @@ ngx_http_rds_json_output_cols(ngx_http_request_t *r,
 
         *last++ = '"';
 
-        last = (u_char *) ngx_http_rds_json_escape_json_str(last,
+        last = (u_char *) ngx_http_rds_xml_escape_xml_str(last,
                                                             col->name.data,
                                                             col->name.len);
 
@@ -460,13 +460,13 @@ ngx_http_rds_json_output_cols(ngx_http_request_t *r,
 
     *last++ = ']';
 
-    return ngx_http_rds_json_submit_mem(r, ctx, size, 0);
+    return ngx_http_rds_xml_submit_mem(r, ctx, size, 0);
 }
 
 
 ngx_int_t
-ngx_http_rds_json_output_field(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx, u_char *data, size_t len, int is_null)
+ngx_http_rds_xml_output_field(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx, u_char *data, size_t len, int is_null)
 {
     u_char                              *pos, *last;
     ngx_http_rds_column_t               *col;
@@ -476,10 +476,10 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
     uintptr_t                            val_escape = 0;
     u_char                              *p;
     ngx_uint_t                           i;
-    ngx_http_rds_json_loc_conf_t        *conf;
+    ngx_http_rds_xml_loc_conf_t        *conf;
     ngx_uint_t                           format;
 
-    conf = ngx_http_get_module_loc_conf(r, ngx_http_rds_json_filter_module);
+    conf = ngx_http_get_module_loc_conf(request, ngx_http_rds_xml_filter_module);
 
     format = conf->format;
 
@@ -489,7 +489,7 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
 
     /* calculate the buffer size */
 
-    if (format == json_format_normal) {
+    if (format == xml_format_normal) {
         if (ctx->cur_col == 0) {
             dd("first column");
             if (ctx->row == 1) {
@@ -504,7 +504,7 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
             size = sizeof(",\"") - 1;
         }
 
-    } else if (format == json_format_compact) {
+    } else if (format == xml_format_compact) {
         if (ctx->cur_col == 0) {
             dd("first column");
             size = sizeof(",[") - 1;
@@ -519,15 +519,15 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
 
     col = &ctx->cols[ctx->cur_col];
 
-    if (format == json_format_normal) {
-        key_escape = ngx_http_rds_json_escape_json_str(NULL, col->name.data,
+    if (format == xml_format_normal) {
+        key_escape = ngx_http_rds_xml_escape_xml_str(NULL, col->name.data,
                                                        col->name.len);
 
         dd("key_escape: %d", (int) key_escape);
 
         size += col->name.len + key_escape + sizeof("\":") - 1;
 
-    } else if (format == json_format_compact) {
+    } else if (format == xml_format_compact) {
         /* do nothing */
 
     } else {
@@ -535,8 +535,8 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
     }
 
     if (len == 0 && ctx->field_data_rest > 0) {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "rds_json: at least one octet should go with the "
+        ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                      "rds_xml: at least one octet should go with the "
                       "field size in one buf");
 
         return NGX_ERROR;
@@ -567,8 +567,8 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
                 }
 
                 if (*p < '0' || *p > '9') {
-                    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                                  "rds_json: invalid integral field value: "
+                    ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                                  "rds_xml: invalid integral field value: "
                                   "\"%*s\"", len, data);
                     return NGX_ERROR;
                 }
@@ -584,8 +584,8 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
                 || *data == '1' || *data == 't' || *data == 'T' )
             {
                 if (len != 1 || ctx->field_data_rest) {
-                    ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                                  "rds_json: invalid boolean field value "
+                    ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                                  "rds_xml: invalid boolean field value "
                                   "leading by \"%*s\"", len, data);
                     return NGX_ERROR;
                 }
@@ -600,8 +600,8 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
                 }
 
             } else {
-                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                              "rds_json: output field: invalid boolean value "
+                ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                              "rds_xml: output field: invalid boolean value "
                               "leading by \"%*s\"", len, data);
                 return NGX_ERROR;
             }
@@ -613,7 +613,7 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
 
             /* TODO: further inspect array types and key-value types */
 
-            val_escape = ngx_http_rds_json_escape_json_str(NULL, data, len);
+            val_escape = ngx_http_rds_xml_escape_xml_str(NULL, data, len);
 
             size += sizeof("\"") - 1 + len + val_escape;
 
@@ -627,10 +627,10 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
         && ctx->cur_col == ctx->col_count - 1)
     {
         /* last column in the row */
-        if (format == json_format_normal) {
+        if (format == xml_format_normal) {
             size += sizeof("}") - 1;
 
-        } else if (format == json_format_compact) {
+        } else if (format == xml_format_compact) {
             size += sizeof("]") - 1;
 
         } else {
@@ -640,7 +640,7 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
 
     /* allocate the buffer */
 
-    pos = ngx_http_rds_json_request_mem(r, ctx, size);
+    pos = ngx_http_rds_xml_request_mem(request, ctx, size);
     if (pos == NULL) {
         return NGX_ERROR;
     }
@@ -649,7 +649,7 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
 
     /* fill up the buffer */
 
-    if (format == json_format_normal) {
+    if (format == xml_format_normal) {
         if (ctx->cur_col == 0) {
             dd("first column");
             if (ctx->row == 1) {
@@ -671,13 +671,13 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
 
         } else {
             last = (u_char *)
-                    ngx_http_rds_json_escape_json_str(last, col->name.data,
+                    ngx_http_rds_xml_escape_xml_str(last, col->name.data,
                                                       col->name.len);
         }
 
         *last++ = '"'; *last++ = ':';
 
-    } else if (format == json_format_compact) {
+    } else if (format == xml_format_compact) {
 
         if (ctx->cur_col == 0) {
             dd("first column");
@@ -736,7 +736,7 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
 #endif
 
                 last = (u_char *)
-                        ngx_http_rds_json_escape_json_str(last, data, len);
+                        ngx_http_rds_xml_escape_xml_str(last, data, len);
 
 #if DDEBUG
                 dd("escaped value \"%.*s\" (len %d, escape %d, escape2 %d)",
@@ -757,10 +757,10 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
 
     if (ctx->field_data_rest == 0 && ctx->cur_col == ctx->col_count - 1) {
         dd("last column in the row");
-        if (format == json_format_normal) {
+        if (format == xml_format_normal) {
             *last++ = '}';
 
-        } else if (format == json_format_compact) {
+        } else if (format == xml_format_compact) {
             *last++ = ']';
 
         } else {
@@ -769,20 +769,20 @@ ngx_http_rds_json_output_field(ngx_http_request_t *r,
     }
 
     if ((size_t) (last - pos) != size) {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "rds_json: output field: buffer error (%d left)",
+        ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                      "rds_xml: output field: buffer error (%d left)",
                       (int) size - (last - pos));
 
         return NGX_ERROR;
     }
 
-    return ngx_http_rds_json_submit_mem(r, ctx, size, 0);
+    return ngx_http_rds_xml_submit_mem(request, ctx, size, 0);
 }
 
 
 ngx_int_t
-ngx_http_rds_json_output_more_field_data(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx, u_char *data, size_t len)
+ngx_http_rds_xml_output_more_field_data(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx, u_char *data, size_t len)
 {
     u_char                          *pos, *last;
     size_t                           size = 0;
@@ -790,9 +790,9 @@ ngx_http_rds_json_output_more_field_data(ngx_http_request_t *r,
     uintptr_t                        escape = 0;
     u_char                          *p;
     ngx_uint_t                       i;
-    ngx_http_rds_json_loc_conf_t    *conf;
+    ngx_http_rds_xml_loc_conf_t    *conf;
 
-    conf = ngx_http_get_module_loc_conf(r, ngx_http_rds_json_filter_module);
+    conf = ngx_http_get_module_loc_conf(request, ngx_http_rds_xml_filter_module);
 
     /* calculate the buffer size */
 
@@ -802,8 +802,8 @@ ngx_http_rds_json_output_more_field_data(ngx_http_request_t *r,
     case rds_rough_col_type_int:
         for (p = data, i = 0; i < len; i++, p++) {
             if (*p < '0' || *p > '9') {
-                ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                              "rds_json: invalid integral field value: \"%*s\"",
+                ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                              "rds_xml: invalid integral field value: \"%*s\"",
                               len, data);
                 return NGX_ERROR;
             }
@@ -822,7 +822,7 @@ ngx_http_rds_json_output_more_field_data(ngx_http_request_t *r,
 
     default:
         /* string */
-        escape = ngx_http_rds_json_escape_json_str(NULL, data, len);
+        escape = ngx_http_rds_xml_escape_xml_str(NULL, data, len);
         size = len + escape;
 
         if (ctx->field_data_rest == 0) {
@@ -834,10 +834,10 @@ ngx_http_rds_json_output_more_field_data(ngx_http_request_t *r,
 
     if (ctx->field_data_rest == 0 && ctx->cur_col == ctx->col_count - 1) {
         /* last column in the row */
-        if (conf->format == json_format_normal) {
+        if (conf->format == xml_format_normal) {
             size += sizeof("}") - 1;
 
-        } else if (conf->format == json_format_compact) {
+        } else if (conf->format == xml_format_compact) {
             size += sizeof("]") - 1;
 
         } else {
@@ -847,7 +847,7 @@ ngx_http_rds_json_output_more_field_data(ngx_http_request_t *r,
 
     /* allocate the buffer */
 
-    pos = ngx_http_rds_json_request_mem(r, ctx, size);
+    pos = ngx_http_rds_xml_request_mem(request, ctx, size);
     if (pos == NULL) {
         return NGX_ERROR;
     }
@@ -879,7 +879,7 @@ ngx_http_rds_json_output_more_field_data(ngx_http_request_t *r,
                 p = last;
 #endif
 
-            last = (u_char *) ngx_http_rds_json_escape_json_str(last,
+            last = (u_char *) ngx_http_rds_xml_escape_xml_str(last,
                     data, len);
 
 #if DDEBUG
@@ -900,10 +900,10 @@ ngx_http_rds_json_output_more_field_data(ngx_http_request_t *r,
 
     if (ctx->field_data_rest == 0 && ctx->cur_col == ctx->col_count - 1) {
         /* last column in the row */
-        if (conf->format == json_format_normal) {
+        if (conf->format == xml_format_normal) {
             *last++ = '}';
 
-        } else if (conf->format == json_format_compact) {
+        } else if (conf->format == xml_format_compact) {
             *last++ = ']';
 
         } else {
@@ -912,31 +912,31 @@ ngx_http_rds_json_output_more_field_data(ngx_http_request_t *r,
     }
 
     if ((size_t) (last - pos) != size) {
-        ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "rds_json: output more field data: buffer error "
+        ngx_log_error(NGX_LOG_ERR, request->connection->log, 0,
+                      "rds_xml: output more field data: buffer error "
                       "(%d left)", (int) (size - (last - pos)));
         return NGX_ERROR;
     }
 
-    return ngx_http_rds_json_submit_mem(r, ctx, size, 0);
+    return ngx_http_rds_xml_submit_mem(request, ctx, size, 0);
 }
 
 
 static u_char *
-ngx_http_rds_json_request_mem(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx, size_t len)
+ngx_http_rds_xml_request_mem(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx, size_t len)
 {
     ngx_int_t                rc;
     u_char                  *p;
 
-    rc = ngx_http_rds_json_get_buf(r, ctx);
+    rc = ngx_http_rds_xml_get_buf(request, ctx);
 
     if (rc != NGX_OK) {
         return NULL;
     }
 
     if (ctx->avail_out < len) {
-        p = ngx_http_rds_json_get_postponed(r, ctx, len);
+        p = ngx_http_rds_xml_get_postponed(request, ctx, len);
         if (p == NULL) {
             return NULL;
         }
@@ -952,10 +952,10 @@ ngx_http_rds_json_request_mem(ngx_http_request_t *r,
 
 
 static ngx_int_t
-ngx_http_rds_json_get_buf(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx)
+ngx_http_rds_xml_get_buf(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx)
 {
-    ngx_http_rds_json_loc_conf_t         *conf;
+    ngx_http_rds_xml_loc_conf_t         *conf;
 
     dd("MEM enter");
 
@@ -963,7 +963,7 @@ ngx_http_rds_json_get_buf(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    conf = ngx_http_get_module_loc_conf(r, ngx_http_rds_json_filter_module);
+    conf = ngx_http_get_module_loc_conf(request, ngx_http_rds_xml_filter_module);
 
     if (ctx->free_bufs) {
         dd("MEM reusing temp buf from free_bufs");
@@ -973,13 +973,13 @@ ngx_http_rds_json_get_buf(ngx_http_request_t *r,
 
     } else {
         dd("MEM creating temp buf with size: %d", (int) conf->buf_size);
-        ctx->out_buf = ngx_create_temp_buf(r->pool, conf->buf_size);
+        ctx->out_buf = ngx_create_temp_buf(request->pool, conf->buf_size);
 
         if (ctx->out_buf == NULL) {
             return NGX_ERROR;
         }
 
-        ctx->out_buf->tag = (ngx_buf_tag_t) &ngx_http_rds_json_filter_module;
+        ctx->out_buf->tag = (ngx_buf_tag_t) &ngx_http_rds_xml_filter_module;
         ctx->out_buf->recycled = 1;
     }
 
@@ -990,8 +990,8 @@ ngx_http_rds_json_get_buf(ngx_http_request_t *r,
 
 
 static u_char *
-ngx_http_rds_json_get_postponed(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx, size_t len)
+ngx_http_rds_xml_get_postponed(ngx_http_request_t *request,
+    ngx_http_rds_xml_ctx_t *ctx, size_t len)
 {
     u_char          *p;
 
@@ -1002,14 +1002,14 @@ ngx_http_rds_json_get_postponed(ngx_http_request_t *r,
     }
 
     if ((size_t) (ctx->cached.end - ctx->cached.start) < len) {
-        ngx_pfree(r->pool, ctx->cached.start);
+        ngx_pfree(request->pool, ctx->cached.start);
         goto alloc;
     }
 
     return ctx->cached.start;
 
 alloc:
-    p = ngx_palloc(r->pool, len);
+    p = ngx_palloc(request->pool, len);
     if (p == NULL) {
         return NULL;
     }
@@ -1022,8 +1022,8 @@ alloc:
 
 
 static ngx_int_t
-ngx_http_rds_json_submit_mem(ngx_http_request_t *r,
-    ngx_http_rds_json_ctx_t *ctx, size_t len, unsigned last_buf)
+ngx_http_rds_xml_submit_mem(ngx_http_request_t *r,
+    ngx_http_rds_xml_ctx_t *ctx, size_t len, unsigned last_buf)
 {
     ngx_chain_t             *cl;
     ngx_int_t                rc;
@@ -1054,7 +1054,7 @@ ngx_http_rds_json_submit_mem(ngx_http_request_t *r,
 
             dd("MEM save ctx->out_buf");
 
-            cl = ngx_alloc_chain_link(r->pool);
+            cl = ngx_alloc_chain_link(request->pool);
             if (cl == NULL) {
                 return NGX_ERROR;
             }
@@ -1069,7 +1069,7 @@ ngx_http_rds_json_submit_mem(ngx_http_request_t *r,
                 break;
             }
 
-            rc = ngx_http_rds_json_get_buf(r, ctx);
+            rc = ngx_http_rds_xml_get_buf(r, ctx);
             if (rc != NGX_OK) {
                 return NGX_ERROR;
             }
@@ -1087,7 +1087,7 @@ ngx_http_rds_json_submit_mem(ngx_http_request_t *r,
     if (ctx->avail_out == 0) {
         dd("MEM save ctx->out_buf");
 
-        cl = ngx_alloc_chain_link(r->pool);
+        cl = ngx_alloc_chain_link(request->pool);
         if (cl == NULL) {
             return NGX_ERROR;
         }
